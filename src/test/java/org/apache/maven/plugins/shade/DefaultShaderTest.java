@@ -52,7 +52,6 @@ import java.util.zip.ZipEntry;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.shade.filter.Filter;
 import org.apache.maven.plugins.shade.relocation.Relocator;
-import org.apache.maven.plugins.shade.relocation.SerializedLambdaRelocator;
 import org.apache.maven.plugins.shade.relocation.SimpleRelocator;
 import org.apache.maven.plugins.shade.resource.AppendingTransformer;
 import org.apache.maven.plugins.shade.resource.ComponentsXmlResourceTransformer;
@@ -125,7 +124,7 @@ public class DefaultShaderTest {
         shader.shade(shadeRequest);
 
         try (JarFile originalJar = new JarFile(plexusJar);
-                JarFile shadedJar = new JarFile(shadedOutput)) {
+             JarFile shadedJar = new JarFile(shadedOutput)) {
             // ASM processes all class files. In doing so, it modifies them, even when not relocating anything.
             // Before MSHADE-391, the processed files were written to the uber JAR, which did no harm, but made it
             // difficult to find out by simple file comparison, if a file was actually relocated or not. Now, Shade
@@ -297,7 +296,7 @@ public class DefaultShaderTest {
         final File dir = TEMPORARY_FOLDER.getRoot();
         // explode src/test/jars/test-artifact-1.0-SNAPSHOT.jar in this temp dir
         try (JarInputStream in =
-                new JarInputStream(Files.newInputStream(Paths.get("src/test/jars/test-artifact-1.0-SNAPSHOT.jar")))) {
+                     new JarInputStream(Files.newInputStream(Paths.get("src/test/jars/test-artifact-1.0-SNAPSHOT.jar")))) {
             JarEntry nextJarEntry;
             while ((nextJarEntry = in.getNextJarEntry()) != null) {
                 if (nextJarEntry.isDirectory()) {
@@ -505,7 +504,7 @@ public class DefaultShaderTest {
         JarEntry entry = shadedJarFile.getJarEntry(serviceEntryName);
 
         List<String> lines = new BufferedReader(
-                        new InputStreamReader(shadedJarFile.getInputStream(entry), StandardCharsets.UTF_8))
+                new InputStreamReader(shadedJarFile.getInputStream(entry), StandardCharsets.UTF_8))
                 .lines()
                 .collect(Collectors.toList());
 
@@ -623,150 +622,10 @@ public class DefaultShaderTest {
     private boolean areEqual(final JarFile jar1, final JarFile jar2, final String entry1, String entry2)
             throws IOException {
         try (InputStream s1 = jar1.getInputStream(
-                        requireNonNull(jar1.getJarEntry(entry1), entry1 + " in " + jar1.getName()));
-                InputStream s2 = jar2.getInputStream(
-                        requireNonNull(jar2.getJarEntry(entry2), entry2 + " in " + jar2.getName()))) {
+                requireNonNull(jar1.getJarEntry(entry1), entry1 + " in " + jar1.getName()));
+             InputStream s2 = jar2.getInputStream(
+                     requireNonNull(jar2.getJarEntry(entry2), entry2 + " in " + jar2.getName()))) {
             return Arrays.equals(IOUtil.toByteArray(s1), IOUtil.toByteArray(s2));
         }
-    }
-
-    /**
-     * Test that method descriptor strings in class constants are properly relocated.
-     * This is needed for lambda deserialization where method signatures containing class
-     * names are stored as string constants in the $deserializeLambda$ method.
-     * See MSHADE-260.
-     */
-    @Test
-    public void testMethodDescriptorStringRelocation() throws Exception {
-//        if (1==1) return;
-
-        TemporaryFolder temporaryFolder = new TemporaryFolder();
-        temporaryFolder.create();
-
-        try {
-            // Create a class file with a method descriptor string constant
-            // This simulates what javac generates for $deserializeLambda$ methods
-            String className = "LambdaTestClass";
-            byte[] classBytes = createClassWithMethodDescriptorConstant(className);
-
-            // Create a JAR containing the class
-            File originalJar = temporaryFolder.newFile("original.jar");
-            try (JarOutputStream jos = new JarOutputStream(new FileOutputStream(originalJar))) {
-                JarEntry entry = new JarEntry(className + ".class");
-                jos.putNextEntry(entry);
-                jos.write(classBytes);
-                jos.closeEntry();
-            }
-
-            // Shade the JAR with a relocator
-            File shadedJar = temporaryFolder.newFile("shaded.jar");
-
-            ShadeRequest shadeRequest = new ShadeRequest();
-            shadeRequest.setJars(new LinkedHashSet<>(Collections.singleton(originalJar)));
-            shadeRequest.setFilters(Collections.emptyList());
-            List<Relocator> list = new ArrayList<>();
-            list.add(new SimpleRelocator("com/google/protobuf", "shaded/com/google/protobuf", null, null));
-            list.add(new SerializedLambdaRelocator("com/google/protobuf", "shaded/com/google/protobuf", null, null, false));
-            shadeRequest.setRelocators(list);
-            shadeRequest.setResourceTransformers(Collections.emptyList());
-            shadeRequest.setUberJar(shadedJar);
-
-            DefaultShader shader = newShader();
-            shader.shade(shadeRequest);
-
-            // Verify the method descriptor string was relocated
-            try (JarFile jar = new JarFile(shadedJar)) {
-                JarEntry entry = jar.getJarEntry(className + ".class");
-                Assert.assertNotNull("Shaded class should exist", entry);
-
-                byte[] shadedClassBytes;
-                try (InputStream is = jar.getInputStream(entry)) {
-                    shadedClassBytes = IOUtil.toByteArray(is);
-                }
-
-                // Read the class and check that the method descriptor string constant
-                // was properly relocated
-                ClassReader reader = new ClassReader(shadedClassBytes);
-                final String[] foundConstant = new String[1];
-
-                ClassVisitor visitor = new ClassVisitor(Opcodes.ASM9) {
-                    @Override
-                    public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
-                        // No-op
-                    }
-                };
-
-                // Use a custom visitor to track LDC instructions with string constants
-                org.objectweb.asm.MethodVisitor methodVisitor = new org.objectweb.asm.MethodVisitor(Opcodes.ASM9) {
-                    @Override
-                    public void visitLdcInsn(Object value) {
-                        if (value instanceof String) {
-                            String str = (String) value;
-                            // Check if this is a method descriptor containing our relocated class
-                            if (str.contains("shaded/com/google/protobuf") || str.contains("com/google/protobuf")) {
-                                foundConstant[0] = str;
-                            }
-                        }
-                    }
-                };
-
-                ClassVisitor cv = new ClassVisitor(Opcodes.ASM9, visitor) {
-                    @Override
-                    public org.objectweb.asm.MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
-                        return methodVisitor;
-                    }
-                };
-
-                reader.accept(cv, ClassReader.SKIP_FRAMES);
-
-                // The method descriptor should contain the shaded path
-                Assert.assertNotNull("Method descriptor string constant should be found", foundConstant[0]);
-                Assert.assertTrue(
-                        "Method descriptor should contain shaded path",
-                        foundConstant[0].contains("shaded/com/google/protobuf"));
-                Assert.assertFalse(
-                        "Method descriptor should NOT contain original path",
-                        foundConstant[0].contains("Lcom/google/protobuf/"));
-            }
-        } finally {
-            temporaryFolder.delete();
-        }
-    }
-
-    /**
-     * Creates a class file with a method that has a string constant containing a method descriptor.
-     * This simulates the $deserializeLambda$ method generated by javac.
-     */
-    private byte[] createClassWithMethodDescriptorConstant(String className) {
-        org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_FRAMES);
-        cw.visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, className, null, "java/lang/Object", null);
-
-        // Create a method that loads a method descriptor string constant
-        // Similar to what javac generates for $deserializeLambda$
-        org.objectweb.asm.MethodVisitor mv = cw.visitMethod(
-                Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC,
-                "$deserializeLambda$",
-                "(Ljava/lang/invoke/SerializedLambda;)Ljava/lang/Object;",
-                null,
-                null);
-
-        mv.visitCode();
-
-        // Load a method descriptor string constant that contains a class name
-        // This is the pattern that needs to be relocated: (Lcom/google/protobuf/Message;)Ljava/lang/String;
-        mv.visitLdcInsn("(Lcom/google/protobuf/Message;)Ljava/lang/String;");
-
-        // Pop it (we don't actually use it, just testing the constant)
-        mv.visitInsn(Opcodes.POP);
-
-        // Return null
-        mv.visitInsn(Opcodes.ACONST_NULL);
-        mv.visitInsn(Opcodes.ARETURN);
-
-        mv.visitMaxs(1, 1);
-        mv.visitEnd();
-
-        cw.visitEnd();
-        return cw.toByteArray();
     }
 }

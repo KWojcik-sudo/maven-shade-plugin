@@ -22,7 +22,7 @@ package structure.
 ## What the Test Verifies
 
 1. All classes are relocated from `org.apache.maven.its.shade.reloc.lambda` to
-   `org.apache.maven.its.shade.reloc.lambda.shaded`
+   `org.apache.maven.its.shade.reloc.shaded.lambda`
 2. The original package paths do NOT exist in the shaded JAR
 3. Most importantly: The serialized lambda metadata (in the bytecode's constant
    pool) references the shaded package, not the original
@@ -37,8 +37,8 @@ mvn verify -Prun-its -Dinvoker.test=reloc-serialized-lambda
 ## Expected Behavior
 
 After shading:
-- `Main.class` should be at `org/apache/maven/its/shade/reloc/lambda/shaded/Main.class`
+- `Main.class` should be at `org/apache/maven/its/shade/reloc/shaded/lambda/Main.class`
 - The bytecode should NOT contain references to the original package path
   `org/apache/maven/its/shade/reloc/lambda/Processor`
 - All lambda metadata should use the shaded path
-  `org/apache/maven/its/shade/reloc/lambda/shaded/Processor`
+  `org/apache/maven/its/shade/reloc/shaded/lambda/Processor`

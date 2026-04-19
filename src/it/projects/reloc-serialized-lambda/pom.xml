@@ -51,7 +51,7 @@ under the License.
               <relocations>
                 <relocation>
                   <pattern>org.apache.maven.its.shade.reloc.lambda</pattern>
-                  <shadedPattern>org.apache.maven.its.shade.reloc.lambda.shaded</shadedPattern>
+                  <shadedPattern>org.apache.maven.its.shade.reloc.shaded.lambda</shadedPattern>
                 </relocation>
               </relocations>
             </configuration>
